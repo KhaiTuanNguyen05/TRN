@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satellite link budgets & orbits</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+        header { background: #1e2937; padding: 20px; text-align: center; border-bottom: 3px solid #3b82f6; }
+        h1 { margin: 0; color: #60a5fa; }
+        .tabs { display: flex; background: #1e2937; }
+        .tab { padding: 15px 25px; cursor: pointer; flex: 1; text-align: center; }
+        .tab.active { background: #3b82f6; color: white; font-weight: bold; }
+        .content { padding: 30px; max-width: 1350px; margin: auto; }
+        .hidden { display: none; }
+        .card { background: #1e2937; padding: 25px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        label { display: block; margin: 12px 0 5px; font-weight: bold; }
+        input[type="number"], input[type="range"] { width: 100%; padding: 8px; border-radius: 6px; }
+        .value { font-weight: bold; color: #60a5fa; float: right; }
+        button { background: #3b82f6; color: white; padding: 12px; margin: 8px 4px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #2563eb; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #334155; }
+        th { background: #1e40af; }
+        .result { font-size: 1.4em; padding: 18px; background: #1e3a8a; border-radius: 10px; margin: 15px 0; }
+        input[readonly] { background: #1e2937; color: #e2e8f0; border: 1px solid #334155; text-align: center; }
+        .orbit-info { font-size: 0.9em; margin: 8px 0; background: #1e2937; padding: 10px; border-radius: 6px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Satellite link budgets & orbits</h1>
+    <p>Interactive Link Budget • Realistic Orbit Animation with Footprint & Elevation</p>
+</header>
+<div class="tabs">
+    <div class="tab active" onclick="switchTab(0)">Orbit Visualizer</div>
+    <div class="tab" onclick="switchTab(1)">Link Budget Calculator</div>
+    <div class="tab" onclick="switchTab(2)">Path Loss Visualizer</div>
+</div>
+
+<!-- ==================== ORBIT VISUALIZER ==================== -->
+<div id="tab0" class="content">
+    <div class="card">
+        <h2>Orbit Visualizer — Ground Footprint + Elevation vs Time</h2>
+       
+        <select id="orbitSelect" onchange="updateOrbitSlider()">
+            <option value="LEO">LEO (170 – 2000 km altitude)</option>
+            <option value="MEO">MEO (2000 – 35700 km altitude)</option>
+            <option value="GEO">GEO (35,700 km altitude — fixed)</option>
+        </select>
+       
+        <div id="altitude_container" style="margin-top:15px;">
+            <label>Altitude h (km) <span class="value" id="alt_val">1000</span></label>
+            <input type="range" id="altitude" min="170" max="2000" value="1000" oninput="updateAltVal(); drawOrbit()">
+        </div>
+       
+        <div class="orbit-info">
+            Orbit radius r = R<sub>⊕</sub> + h • Earth radius R<sub>⊕</sub> = 6371 km<br>
+            <strong>Ground footprint</strong> (E<sub>min</sub> = 5°): ψ = acos((R/r)·cos E<sub>min</sub>)<br>
+            <strong>Elevation angle vs time</strong> shown live + full-orbit chart below (equatorial GS)
+        </div>
+       
+        <canvas id="orbitCanvas" width="800" height="800"></canvas>
+       
+        <canvas id="elevationChart" width="800" height="280" style="margin-top:20px; background:#0f172a; border-radius:8px;"></canvas>
+       
+        <p style="font-size:0.85em; text-align:center; margin-top:8px;">
+            Current elevation at ground station (live) • Chart shows one full orbit (phase angle)
+        </p>
+    </div>
+</div>
+
+<!-- ==================== LINK BUDGET CALCULATOR ==================== -->
+<div id="tab1" class="content hidden">
+    <div class="card">
+        <h2>Adjustable Link Budget Calculator</h2>
+        <div class="grid">
+            <div>
+                <h3>Common Adjustable Parameters</h3>
+               
+                <label>Frequency <span class="value" id="freq_val">600</span> MHz</label>
+                <input type="range" id="freq" min="200" max="1000" value="600" oninput="updateValues(); calculateAll()">
+                <input type="number" id="freq_num" value="600" min="200" max="1000" oninput="syncFreq(this)">
+                <label>Transmit Power PTX <span class="value" id="ptx_val">38</span> dBm</label>
+                <input type="range" id="ptx" min="30" max="50" value="38" oninput="updateValues(); calculateAll()">
+                <label>Tx Antenna Gain GTX <span class="value" id="gtx_val">12</span> dBi</label>
+                <input type="range" id="gtx" min="3" max="22" value="12" oninput="updateValues(); calculateAll()">
+                <label>Rx Antenna Gain GRX <span class="value" id="grx_val">15</span> dBi</label>
+                <input type="range" id="grx" min="6" max="26" value="15" oninput="updateValues(); calculateAll()">
+                <label>Other Losses Lother <span class="value" id="lother_val">7</span> dB</label>
+                <input type="range" id="lother" min="4" max="15" value="7" oninput="updateValues(); calculateAll()">
+                <label>Receiver Sensitivity Psens <span class="value" id="psens_val">-115</span> dBm</label>
+                <input type="range" id="psens" min="-140" max="-90" value="-115" step="1" oninput="updateValues(); calculateAll()">
+            </div>
+            <div>
+                <h3>Load Typical Values</h3>
+                <button onclick="loadOrbitPreset('LEO')">LEO Typical</button>
+                <button onclick="loadOrbitPreset('MEO')">MEO Typical</button>
+                <button onclick="loadOrbitPreset('GEO')">GEO Typical</button>
+            </div>
+        </div>
+        <div class="result" id="main_result">Adjust parameters above</div>
+        <table>
+            <tr>
+                <th>Orbit</th>
+                <th>Distance (km)</th>
+                <th>FSPL (dB)</th>
+                <th>PRX (dBm)</th>
+                <th>Link Margin (dB)</th>
+                <th>Status</th>
+            </tr>
+            <tr>
+                <td>LEO</td>
+                <td><input type="number" id="d_leo" value="1000" min="170" max="2000" style="width:90px" oninput="calculateAll()"></td>
+                <td id="fspl_leo">-</td>
+                <td id="pr_leo">-</td>
+                <td id="margin_leo">-</td>
+                <td id="status_leo">-</td>
+            </tr>
+            <tr>
+                <td>MEO</td>
+                <td><input type="number" id="d_meo" value="15000" min="2000" max="35700" style="width:90px" oninput="calculateAll()"></td>
+                <td id="fspl_meo">-</td>
+                <td id="pr_meo">-</td>
+                <td id="margin_meo">-</td>
+                <td id="status_meo">-</td>
+            </tr>
+            <tr>
+                <td>GEO</td>
+                <td><input type="number" id="d_geo" value="35700" readonly style="width:90px"></td>
+                <td id="fspl_geo">-</td>
+                <td id="pr_geo">-</td>
+                <td id="margin_geo">-</td>
+                <td id="status_geo">-</td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<!-- ==================== PATH LOSS VISUALIZER ==================== -->
+<div id="tab2" class="content hidden">
+    <div class="card">
+        <h2>Path Loss Visualizer — Adjustable Bands</h2>
+       
+        <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin-bottom:20px;">
+            <div>
+                <label>L-band (1–2 GHz)</label>
+                <input type="range" id="f_l" min="1000" max="2000" value="1500" oninput="updatePathLossChart()">
+                <span class="value" id="f_l_val">1.5</span> GHz
+            </div>
+            <div>
+                <label>S-band (2–4 GHz)</label>
+                <input type="range" id="f_s" min="2000" max="4000" value="3000" oninput="updatePathLossChart()">
+                <span class="value" id="f_s_val">3.0</span> GHz
+            </div>
+            <div>
+                <label>C-band (4–8 GHz)</label>
+                <input type="range" id="f_c" min="4000" max="8000" value="6000" oninput="updatePathLossChart()">
+                <span class="value" id="f_c_val">6.0</span> GHz
+            </div>
+            <div>
+                <label>X-band (8–12 GHz)</label>
+                <input type="range" id="f_x" min="8000" max="12000" value="10000" oninput="updatePathLossChart()">
+                <span class="value" id="f_x_val">10.0</span> GHz
+            </div>
+            <div>
+                <label>Ka-band (26–40 GHz)</label>
+                <input type="range" id="f_ka" min="26000" max="40000" value="30000" oninput="updatePathLossChart()">
+                <span class="value" id="f_ka_val">30.0</span> GHz
+            </div>
+        </div>
+        <canvas id="pathLossChart" width="1100" height="580"></canvas>
+    </div>
+</div>
+
+<script>
+// ==================== ORBIT VISUALIZER ====================
+const ctx = document.getElementById('orbitCanvas').getContext('2d');
+let anim, elevationChart;
+const R_EARTH_KM = 6371;
+const EMIN_DEG = 5;
+
+function updateOrbitSlider() {
+    const type = document.getElementById('orbitSelect').value;
+    const slider = document.getElementById('altitude');
+    if (type === 'LEO') {
+        slider.min = 170; slider.max = 2000; slider.disabled = false;
+    } else if (type === 'MEO') {
+        slider.min = 2000; slider.max = 35700; slider.disabled = false;
+    } else {
+        slider.min = 35700; slider.max = 35700; slider.value = 35700; slider.disabled = true;
+    }
+    updateAltVal();
+    drawOrbit();
+    createElevationChart();
+}
+function updateAltVal() {
+    document.getElementById('alt_val').textContent = document.getElementById('altitude').value;
+}
+function drawOrbit() {
+    cancelAnimationFrame(anim);
+   
+    const type = document.getElementById('orbitSelect').value;
+    let h_km = parseFloat(document.getElementById('altitude').value);
+    if (type === 'GEO') h_km = 35700;
+   
+    const earthR = 40;
+    const scale_km_px = 117;
+    const orbitR = earthR + ( (R_EARTH_KM + h_km) / scale_km_px );
+   
+    const r_km = R_EARTH_KM + h_km;
+    const cosPsi = (R_EARTH_KM / r_km) * Math.cos(EMIN_DEG * Math.PI / 180);
+    const psi_rad = Math.acos(cosPsi);
+   
+    const gs_angle = -Math.PI / 3;
+   
+    let sat_angle = 0;
+    let speed = type === 'LEO' ? 0.028 : type === 'MEO' ? 0.009 : 0.0014;
+   
+    function animate() {
+        ctx.clearRect(0, 0, 800, 800);
+       
+        // Earth
+        ctx.fillStyle = '#1e40af';
+        ctx.beginPath();
+        ctx.arc(400, 400, earthR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Earth', 400, 400);
+       
+        // Orbit circle
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(400, 400, orbitR, 0, Math.PI * 2);
+        ctx.stroke();
+       
+        // Sub-satellite point
+        const sub_x = 400 + earthR * Math.cos(sat_angle);
+        const sub_y = 400 + earthR * Math.sin(sat_angle);
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(sub_x, sub_y, 7, 0, Math.PI * 2);
+        ctx.fill();
+       
+        // Ground footprint
+        const startA = sat_angle - psi_rad;
+        const endA = sat_angle + psi_rad;
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 6;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(400, 400, earthR, startA, endA);
+        ctx.stroke();
+        ctx.setLineDash([]);
+       
+        // Ground station
+        const gs_r = earthR + 12;
+        const gs_x = 400 + gs_r * Math.cos(gs_angle);
+        const gs_y = 400 + gs_r * Math.sin(gs_angle);
+        ctx.font = '28px Arial';
+        ctx.fillStyle = '#eab308';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('👤', gs_x, gs_y);
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillText('GS', gs_x, gs_y + 22);
+       
+        // Satellite
+        const sat_x = 400 + orbitR * Math.cos(sat_angle);
+        const sat_y = 400 + orbitR * Math.sin(sat_angle);
+        ctx.save();
+        ctx.translate(sat_x, sat_y);
+        ctx.rotate(sat_angle + Math.PI / 2);
+        ctx.font = '34px Arial';
+        ctx.fillStyle = '#f59e0b';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🛰️', 0, 0);
+        ctx.restore();
+       
+        // Live elevation
+        const gamma = Math.abs(sat_angle - gs_angle) % (2 * Math.PI);
+        const gamma_rad = Math.min(gamma, 2 * Math.PI - gamma);
+        const d_km = Math.sqrt(r_km * r_km + R_EARTH_KM * R_EARTH_KM - 2 * r_km * R_EARTH_KM * Math.cos(gamma_rad));
+        let sinE = (r_km * Math.cos(gamma_rad) - R_EARTH_KM) / d_km;
+        sinE = Math.max(Math.min(sinE, 1), -1);
+        const currentE = Math.asin(sinE) * 180 / Math.PI;
+       
+        ctx.fillStyle = '#60a5fa';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Elevation: ${currentE.toFixed(1)}°`, 20, 780);
+       
+        sat_angle += speed;
+        anim = requestAnimationFrame(animate);
+    }
+    animate();
+}
+function createElevationChart() {
+    const type = document.getElementById('orbitSelect').value;
+    let h_km = parseFloat(document.getElementById('altitude').value);
+    if (type === 'GEO') h_km = 35700;
+    const r_km = R_EARTH_KM + h_km;
+   
+    const labels = [];
+    const data = [];
+    for (let i = 0; i <= 360; i += 4) {
+        const gamma_rad = i * Math.PI / 180;
+        const d_km = Math.sqrt(r_km**2 + R_EARTH_KM**2 - 2 * r_km * R_EARTH_KM * Math.cos(gamma_rad));
+        let sinE = (r_km * Math.cos(gamma_rad) - R_EARTH_KM) / d_km;
+        sinE = Math.max(Math.min(sinE, 1), -1);
+        const e_deg = Math.asin(sinE) * 180 / Math.PI;
+        labels.push(i + '°');
+        data.push(Math.max(e_deg, 0));
+    }
+   
+    if (elevationChart) elevationChart.destroy();
+   
+    elevationChart = new Chart(document.getElementById('elevationChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: `Elevation Angle vs Time — ${type} (Emin=5°)`,
+                data: data,
+                borderColor: '#22d3ee',
+                borderWidth: 3,
+                tension: 0.3,
+                pointRadius: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: { title: { display: true, text: 'Orbital Phase (°) — represents full cycle (24 h for GEO)' } },
+                y: { min: 0, max: 90, title: { display: true, text: 'Elevation Angle (°)' } }
+            },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+// ==================== LINK BUDGET ====================
+const C = 3e8;  // Speed of light m/s
+
+function fspl(d_km, f_MHz) {
+    return 32.44 + 20 * Math.log10(d_km) + 20 * Math.log10(f_MHz);
+}
+
+function updateValues() {
+    document.getElementById('freq_val').textContent = document.getElementById('freq').value;
+    document.getElementById('ptx_val').textContent = document.getElementById('ptx').value;
+    document.getElementById('gtx_val').textContent = document.getElementById('gtx').value;
+    document.getElementById('grx_val').textContent = document.getElementById('grx').value;
+    document.getElementById('lother_val').textContent = document.getElementById('lother').value;
+    document.getElementById('psens_val').textContent = document.getElementById('psens').value;
+}
+
+function syncFreq(el) {
+    document.getElementById('freq').value = el.value;
+    updateValues();
+    calculateAll();
+}
+
+function calculateAll() {
+    const f = parseFloat(document.getElementById('freq').value);
+    const ptx = parseFloat(document.getElementById('ptx').value);
+    const gtx = parseFloat(document.getElementById('gtx').value);
+    const grx = parseFloat(document.getElementById('grx').value);
+    const lother = parseFloat(document.getElementById('lother').value);
+    const psens = parseFloat(document.getElementById('psens').value);
+
+    let d_leo = Math.max(170, Math.min(2000, parseFloat(document.getElementById('d_leo').value)));
+    document.getElementById('d_leo').value = d_leo;
+   
+    let d_meo = Math.max(2000, Math.min(35700, parseFloat(document.getElementById('d_meo').value)));
+    document.getElementById('d_meo').value = d_meo;
+   
+    const d_geo = 35700;
+    const orbits = [
+        {id: 'leo', d: d_leo},
+        {id: 'meo', d: d_meo},
+        {id: 'geo', d: d_geo}
+    ];
+
+    let best = -Infinity;
+    orbits.forEach(o => {
+        const fspl_dB = fspl(o.d, f);
+        const ltotal = fspl_dB + lother;
+
+        // === YOUR FRIIS FORMULA WITH WAVELENGTH ===
+        const f_Hz = f * 1e6;
+        const lambda = C / f_Hz;
+        const R = o.d * 1000;
+
+        const Pt = Math.pow(10, (ptx - 30) / 10);
+        const Gt = Math.pow(10, gtx / 10);
+        const Gr = Math.pow(10, grx / 10);
+
+        const Pr_watts = (Pt * Gt * Gr * lambda * lambda) / Math.pow(4 * Math.PI * R, 2);
+        let prx = 10 * Math.log10(Pr_watts) + 30;
+
+        prx = prx - lother;
+
+        const margin = prx - psens;
+
+        document.getElementById(`fspl_${o.id}`).textContent = fspl_dB.toFixed(2);
+        document.getElementById(`pr_${o.id}`).textContent = prx.toFixed(2);
+        document.getElementById(`margin_${o.id}`).textContent = margin.toFixed(1);
+
+        const status = margin > 10 ? "✅ Good" : margin > 3 ? "⚠️ Marginal" : "❌ Poor";
+        document.getElementById(`status_${o.id}`).innerHTML = status;
+
+        if (margin > best) best = margin;
+    });
+
+    document.getElementById('main_result').innerHTML = `
+        Freq: <b>${f} MHz</b> |
+        Best Margin: <b>${best.toFixed(1)} dB</b>
+    `;
+}
+
+function loadOrbitPreset(orbit) {
+    if (orbit === 'LEO') {
+        document.getElementById('ptx').value = 38; document.getElementById('gtx').value = 10;
+        document.getElementById('grx').value = 12; document.getElementById('lother').value = 7;
+        document.getElementById('d_leo').value = 1000;
+    } else if (orbit === 'MEO') {
+        document.getElementById('ptx').value = 42; document.getElementById('gtx').value = 14;
+        document.getElementById('grx').value = 16; document.getElementById('lother').value = 9;
+        document.getElementById('d_meo').value = 15000;
+    } else {
+        document.getElementById('ptx').value = 45; document.getElementById('gtx').value = 18;
+        document.getElementById('grx').value = 22; document.getElementById('lother').value = 11;
+    }
+    updateValues();
+    calculateAll();
+}
+
+// ==================== PATH LOSS VISUALIZER ====================
+let pathChart;
+function updatePathLossChart() {
+    const dist = [];
+    for (let i = 100; i <= 10000; i *= 1.15) dist.push(i);
+    const bands = [
+        {name: 'L-band', id: 'f_l', color: '#22d3ee'},
+        {name: 'S-band', id: 'f_s', color: '#4ade80'},
+        {name: 'C-band', id: 'f_c', color: '#fbbf24'},
+        {name: 'X-band', id: 'f_x', color: '#f87171'},
+        {name: 'Ka-band', id: 'f_ka', color: '#c084fc'}
+    ];
+    const datasets = bands.map(b => {
+        const f_mhz = parseFloat(document.getElementById(b.id).value);
+        document.getElementById(b.id + '_val').textContent = (f_mhz/1000).toFixed(1);
+        return {
+            label: `${b.name} (${(f_mhz/1000).toFixed(1)} GHz)`,
+            borderColor: b.color,
+            data: dist.map(d => 32.44 + 20*Math.log10(d) + 20*Math.log10(f_mhz)),
+            tension: 0.1
+        };
+    });
+    if (pathChart) pathChart.destroy();
+    pathChart = new Chart(document.getElementById('pathLossChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: dist, datasets: datasets },
+        options: {
+            scales: {
+                x: { type: 'logarithmic', title: { display: true, text: 'Distance (km) — Log Scale' }},
+                y: { min: 120, max: 240, title: { display: true, text: 'Free Space Path Loss (dB)' }}
+            },
+            plugins: { legend: { position: 'top' }}
+        }
+    });
+}
+
+// Tab Control
+function switchTab(n) {
+    document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab' + n).classList.remove('hidden');
+    document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===n));
+    if (n === 2) updatePathLossChart();
+}
+
+// Initialize
+window.onload = () => {
+    updateOrbitSlider();
+    updateValues();
+    calculateAll();
+    createElevationChart();
+};
+</script>
+</body>
+</html>
